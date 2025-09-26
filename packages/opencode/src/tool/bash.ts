@@ -1,5 +1,5 @@
 import z from "zod/v4"
-import { exec } from "child_process"
+import { spawn } from "child_process"
 
 import { Tool } from "./tool"
 import DESCRIPTION from "./bash.txt"
@@ -12,9 +12,14 @@ import { $ } from "bun"
 import { Instance } from "../project/instance"
 import { Agent } from "../agent/agent"
 
+/** Maximum length of output before truncation */
 const MAX_OUTPUT_LENGTH = 30_000
-const DEFAULT_TIMEOUT = 1 * 60 * 1000
+/** Default timeout for command execution in milliseconds */
+const DEFAULT_TIMEOUT = 60 * 1000
+/** Maximum allowed timeout for command execution in milliseconds */
 const MAX_TIMEOUT = 10 * 60 * 1000
+/** Grace period for SIGTERM before sending SIGKILL in milliseconds */
+const GRACE_PERIOD = 3 * 1000
 
 const log = Log.create({ service: "bash-tool" })
 
@@ -146,11 +151,67 @@ export const BashTool = Tool.define("bash", {
       })
     }
 
-    const process = exec(params.command, {
+    // Use spawn with stdio configuration to prevent stdin access
+    // This prevents interactive commands from hanging by blocking stdin entirely
+    const childProcess = spawn("bash", ["-c", params.command], {
       cwd: Instance.directory,
       signal: ctx.abort,
-      timeout,
+      env: process.env,
+      // Critical: Configure stdio to prevent stdin access
+      // 'ignore' means stdin is closed, causing interactive commands to fail fast
+      stdio: ["ignore", "pipe", "pipe"],
+      // Process group isolation to prevent orphaned processes
+      detached: true,
+      // Additional options for better process handling
+      windowsHide: true, // Hide console window on Windows
     })
+
+
+    // Improved timeout handling with escalating signals
+    let timeoutId: NodeJS.Timeout | undefined
+    let graceTimeoutId: NodeJS.Timeout | undefined
+
+    /** Clean up all timeout handlers */
+    const cleanupTimeouts = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        timeoutId = undefined
+      }
+      if (graceTimeoutId) {
+        clearTimeout(graceTimeoutId)
+        graceTimeoutId = undefined
+      }
+    }
+
+    /** Kill the process group using the specified signal */
+    const killProcessGroup = (signal: NodeJS.Signals) => {
+      if (childProcess.pid && !childProcess.killed) {
+        try {
+          // Kill the entire process group to prevent orphaned processes
+          // Use negative PID to target the process group
+          process.kill(-childProcess.pid, signal)
+        } catch (error) {
+          // Fallback to killing just the main process if process group kill fails
+          childProcess.kill(signal)
+        }
+      }
+    }
+
+    // Handle timeout with escalating signals
+    timeoutId = setTimeout(() => {
+      if (!childProcess.killed) {
+        log.info("Process timeout - sending SIGTERM", { pid: childProcess.pid })
+        killProcessGroup("SIGTERM")
+
+        // Give process grace period to terminate gracefully
+        graceTimeoutId = setTimeout(() => {
+          if (!childProcess.killed) {
+            log.info("Process didn't respond to SIGTERM - sending SIGKILL", { pid: childProcess.pid })
+            killProcessGroup("SIGKILL")
+          }
+        }, GRACE_PERIOD)
+      }
+    }, timeout)
 
     let output = ""
 
@@ -162,7 +223,7 @@ export const BashTool = Tool.define("bash", {
       },
     })
 
-    process.stdout?.on("data", (chunk) => {
+    childProcess.stdout?.on("data", (chunk: Buffer) => {
       output += chunk.toString()
       ctx.metadata({
         metadata: {
@@ -172,7 +233,7 @@ export const BashTool = Tool.define("bash", {
       })
     })
 
-    process.stderr?.on("data", (chunk) => {
+    childProcess.stderr?.on("data", (chunk: Buffer) => {
       output += chunk.toString()
       ctx.metadata({
         metadata: {
@@ -183,15 +244,19 @@ export const BashTool = Tool.define("bash", {
     })
 
     await new Promise<void>((resolve) => {
-      process.on("close", () => {
+      const cleanup = () => {
+        cleanupTimeouts()
         resolve()
-      })
+      }
+
+      childProcess.on("close", cleanup)
+      childProcess.on("exit", cleanup)
     })
 
     ctx.metadata({
       metadata: {
         output: output,
-        exit: process.exitCode,
+        exit: childProcess.exitCode,
         description: params.description,
       },
     })
@@ -205,7 +270,7 @@ export const BashTool = Tool.define("bash", {
       title: params.command,
       metadata: {
         output,
-        exit: process.exitCode,
+        exit: childProcess.exitCode,
         description: params.description,
       },
       output,
