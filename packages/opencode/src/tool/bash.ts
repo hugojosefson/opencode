@@ -1,5 +1,6 @@
 import z from "zod/v4"
 import { spawn } from "child_process"
+
 import { Tool } from "./tool"
 import DESCRIPTION from "./bash.txt"
 import { Permission } from "../permission"
@@ -11,10 +12,14 @@ import { $ } from "bun"
 import { Instance } from "../project/instance"
 import { Agent } from "../agent/agent"
 
+/** Maximum length of output before truncation */
 const MAX_OUTPUT_LENGTH = 30_000
-const DEFAULT_TIMEOUT = 1 * 60 * 1000
+/** Default timeout for command execution in milliseconds */
+const DEFAULT_TIMEOUT = 60 * 1000
+/** Maximum allowed timeout for command execution in milliseconds */
 const MAX_TIMEOUT = 10 * 60 * 1000
-const SIGKILL_TIMEOUT_MS = 200
+/** Grace period for SIGTERM before sending SIGKILL in milliseconds */
+const GRACE_PERIOD = 3 * 1000
 
 const log = Log.create({ service: "bash-tool" })
 
@@ -146,12 +151,67 @@ export const BashTool = Tool.define("bash", {
       })
     }
 
-    const proc = spawn(params.command, {
-      shell: true,
+    // Use spawn with stdio configuration to prevent stdin access
+    // This prevents interactive commands from hanging by blocking stdin entirely
+    const childProcess = spawn("bash", ["-c", params.command], {
       cwd: Instance.directory,
+      signal: ctx.abort,
+      env: process.env,
+      // Critical: Configure stdio to prevent stdin access
+      // 'ignore' means stdin is closed, causing interactive commands to fail fast
       stdio: ["ignore", "pipe", "pipe"],
-      detached: process.platform !== "win32",
+      // Process group isolation to prevent orphaned processes
+      detached: true,
+      // Additional options for better process handling
+      windowsHide: true, // Hide console window on Windows
     })
+
+
+    // Improved timeout handling with escalating signals
+    let timeoutId: NodeJS.Timeout | undefined
+    let graceTimeoutId: NodeJS.Timeout | undefined
+
+    /** Clean up all timeout handlers */
+    const cleanupTimeouts = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        timeoutId = undefined
+      }
+      if (graceTimeoutId) {
+        clearTimeout(graceTimeoutId)
+        graceTimeoutId = undefined
+      }
+    }
+
+    /** Kill the process group using the specified signal */
+    const killProcessGroup = (signal: NodeJS.Signals) => {
+      if (childProcess.pid && !childProcess.killed) {
+        try {
+          // Kill the entire process group to prevent orphaned processes
+          // Use negative PID to target the process group
+          process.kill(-childProcess.pid, signal)
+        } catch (error) {
+          // Fallback to killing just the main process if process group kill fails
+          childProcess.kill(signal)
+        }
+      }
+    }
+
+    // Handle timeout with escalating signals
+    timeoutId = setTimeout(() => {
+      if (!childProcess.killed) {
+        log.info("Process timeout - sending SIGTERM", { pid: childProcess.pid })
+        killProcessGroup("SIGTERM")
+
+        // Give process grace period to terminate gracefully
+        graceTimeoutId = setTimeout(() => {
+          if (!childProcess.killed) {
+            log.info("Process didn't respond to SIGTERM - sending SIGKILL", { pid: childProcess.pid })
+            killProcessGroup("SIGKILL")
+          }
+        }, GRACE_PERIOD)
+      }
+    }, timeout)
 
     let output = ""
 
@@ -163,87 +223,42 @@ export const BashTool = Tool.define("bash", {
       },
     })
 
-    const append = (chunk: Buffer) => {
+    childProcess.stdout?.on("data", (chunk: Buffer) => {
       output += chunk.toString()
       ctx.metadata({
         metadata: {
-          output,
+          output: output,
           description: params.description,
         },
       })
-    }
+    })
 
-    proc.stdout?.on("data", append)
-    proc.stderr?.on("data", append)
+    childProcess.stderr?.on("data", (chunk: Buffer) => {
+      output += chunk.toString()
+      ctx.metadata({
+        metadata: {
+          output: output,
+          description: params.description,
+        },
+      })
+    })
 
-    let timedOut = false
-    let aborted = false
-    let exited = false
-
-    const killTree = async () => {
-      const pid = proc.pid
-      if (!pid || exited) {
-        return
-      }
-
-      if (process.platform === "win32") {
-        await new Promise<void>((resolve) => {
-          const killer = spawn("taskkill", ["/pid", String(pid), "/f", "/t"], { stdio: "ignore" })
-          killer.once("exit", resolve)
-          killer.once("error", resolve)
-        })
-        return
-      }
-
-      try {
-        process.kill(-pid, "SIGTERM")
-        await Bun.sleep(SIGKILL_TIMEOUT_MS)
-        if (!exited) {
-          process.kill(-pid, "SIGKILL")
-        }
-      } catch (_e) {
-        proc.kill("SIGTERM")
-        await Bun.sleep(SIGKILL_TIMEOUT_MS)
-        if (!exited) {
-          proc.kill("SIGKILL")
-        }
-      }
-    }
-
-    if (ctx.abort.aborted) {
-      aborted = true
-      await killTree()
-    }
-
-    const abortHandler = () => {
-      aborted = true
-      void killTree()
-    }
-
-    ctx.abort.addEventListener("abort", abortHandler, { once: true })
-
-    const timeoutTimer = setTimeout(() => {
-      timedOut = true
-      void killTree()
-    }, timeout)
-
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve) => {
       const cleanup = () => {
-        clearTimeout(timeoutTimer)
-        ctx.abort.removeEventListener("abort", abortHandler)
+        cleanupTimeouts()
+        resolve()
       }
 
-      proc.once("exit", () => {
-        exited = true
-        cleanup()
-        resolve()
-      })
+      childProcess.on("close", cleanup)
+      childProcess.on("exit", cleanup)
+    })
 
-      proc.once("error", (error) => {
-        exited = true
-        cleanup()
-        reject(error)
-      })
+    ctx.metadata({
+      metadata: {
+        output: output,
+        exit: childProcess.exitCode,
+        description: params.description,
+      },
     })
 
     if (output.length > MAX_OUTPUT_LENGTH) {
@@ -251,19 +266,15 @@ export const BashTool = Tool.define("bash", {
       output += "\n\n(Output was truncated due to length limit)"
     }
 
-    if (timedOut) {
+    if (process.signalCode === "SIGTERM" && params.timeout) {
       output += `\n\n(Command timed out after ${timeout} ms)`
-    }
-
-    if (aborted) {
-      output += "\n\n(Command was aborted)"
     }
 
     return {
       title: params.command,
       metadata: {
         output,
-        exit: proc.exitCode,
+        exit: childProcess.exitCode,
         description: params.description,
       },
       output,
