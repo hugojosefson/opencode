@@ -30,7 +30,7 @@ export namespace Project {
     if (!git) {
       const project: Info = {
         id: "global",
-        worktree: "/",
+        worktree: directory,
         time: {
           created: Date.now(),
         },
@@ -54,7 +54,7 @@ export namespace Project {
     if (!id) {
       const project: Info = {
         id: "global",
-        worktree: "/",
+        worktree: directory,
         time: {
           created: Date.now(),
         },
