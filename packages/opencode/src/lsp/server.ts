@@ -98,7 +98,39 @@ export const Deno: Info = {
     if (!first.value) return undefined
     return path.dirname(first.value)
   },
-  extensions: [".ts", ".tsx", ".js", ".jsx", ".mjs"],
+  extensions: [
+    // Full language server features
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".mts",
+    ".cts",
+    ".dts",
+    ".dmts",
+    ".dcts",
+    // Formatting and basic support
+    ".json",
+    ".jsonc",
+    ".markdown",
+    ".md",
+    // Additional supported languages
+    ".html",
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    ".yaml",
+    ".yml",
+    ".sql",
+    ".svelte",
+    ".vue",
+    ".astro",
+    ".vto",
+    ".njk",
+  ],
   async spawn(root) {
     const deno = which("deno")
     if (!deno) {
@@ -108,6 +140,17 @@ export const Deno: Info = {
       process: spawn(deno, ["lsp"], {
         cwd: root,
       }),
+      initialization: {
+        enable: true,
+        lint: true,
+        unstable: false,
+        config: null,
+        importMap: null,
+        codeLens: {
+          implementations: true,
+          references: true,
+        },
+      },
     }
   },
 }
