@@ -7,12 +7,12 @@ const nitroConfig: any = (() => {
   const target = process.env.OPENCODE_DEPLOYMENT_TARGET
   if (target === "cloudflare") {
     return {
-      compatibilityDate: "2024-09-19",
-      preset: "cloudflare-module",
+      compatibilityDate: "2024-09-19" as const,
+      preset:  "cloudflare-module" as const,
       cloudflare: {
         nodeCompat: true,
       },
-    }
+    } as const
   }
   return {}
 })()
