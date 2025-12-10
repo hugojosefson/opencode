@@ -1068,8 +1068,9 @@ export function Session() {
                 )}
               </For>
             </scrollbox>
-            <box flexShrink={0}>
-              <Show when={permissions().length > 0}>
+            <Show when={!(session()?.parentID && sync.data.config.experimental?.disable_subagent_input)}>
+              <box flexShrink={0}>
+                <Show when={permissions().length > 0}>
                 <PermissionPrompt request={permissions()[0]} />
               </Show>
               <Show when={permissions().length === 0 && questions().length > 0}>
@@ -1077,21 +1078,22 @@ export function Session() {
               </Show>
               <Prompt
                 visible={!session()?.parentID && permissions().length === 0 && questions().length === 0}
-                ref={(r) => {
-                  prompt = r
-                  promptRef.set(r)
+                  ref={(r) => {
+                    prompt = r
+                    promptRef.set(r)
                   // Apply initial prompt when prompt component mounts (e.g., from fork)
                   if (route.initialPrompt) {
                     r.set(route.initialPrompt)
                   }
-                }}
-                disabled={permissions().length > 0 || questions().length > 0}
-                onSubmit={() => {
-                  toBottom()
-                }}
-                sessionID={route.sessionID}
-              />
-            </box>
+                  }}
+                  disabled={permissions().length > 0 || questions().length > 0}
+                  onSubmit={() => {
+                    toBottom()
+                  }}
+                  sessionID={route.sessionID}
+                />
+              </box>
+            </Show>
           </Show>
           <Toast />
         </box>

@@ -1816,6 +1816,10 @@ export type Config = {
      */
     primary_tools?: Array<string>
     /**
+     * Disable input box when viewing a subagent chat.
+     */
+    disable_subagent_input?: boolean
+    /**
      * Continue the agent loop when a tool call is denied
      */
     continue_loop_on_deny?: boolean

@@ -1086,6 +1086,7 @@ export namespace Config {
             .positive()
             .optional()
             .describe("Timeout in milliseconds for model context protocol (MCP) requests"),
+          disable_subagent_input: z.boolean().optional(),
         })
         .optional(),
     })
