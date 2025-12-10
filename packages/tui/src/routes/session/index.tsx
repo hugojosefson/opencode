@@ -1295,45 +1295,48 @@ export function Session() {
                   )}
                 </For>
               </scrollbox>
+            <Show when={!(session()?.parentID && sync.data.config.experimental?.disable_subagent_input)}>
               <box flexShrink={0}>
                 <Show when={permissions().length > 0}>
                   <PermissionPrompt
                     request={permissions()[0]}
                     directory={sync.session.get(permissions()[0].sessionID)?.directory}
                   />
-                </Show>
-                <Show when={permissions().length === 0 && questions().length > 0}>
+              </Show>
+              <Show when={permissions().length === 0 && questions().length > 0}>
                   <QuestionPrompt
                     request={questions()[0]}
                     directory={sync.session.get(questions()[0].sessionID)?.directory}
                   />
-                </Show>
-                <Show when={session()?.parentID}>
-                  <SubagentFooter />
-                </Show>
-                <Show when={visible()}>
+              </Show>
+              <Show when={session()?.parentID}>
+                <SubagentFooter />
+              </Show>
+              <Show when={visible()}>
                   <pluginRuntime.Slot
-                    name="session_prompt"
-                    mode="replace"
-                    session_id={route.sessionID}
-                    visible={visible()}
-                    disabled={disabled()}
+                  name="session_prompt"
+                  mode="replace"
+                  session_id={route.sessionID}
+                  visible={visible()}
+                  disabled={disabled()}
                     on_submit={toBottom}
                     ref={bind}
-                  >
-                    <Prompt
-                      visible={visible()}
-                      ref={bind}
-                      disabled={disabled()}
-                      onSubmit={() => {
-                        toBottom()
-                      }}
-                      sessionID={route.sessionID}
+                >
+                  <Prompt
+                    visible={visible()
+                  }
+                  ref={bind}
+                  disabled={disabled()}
+                  onSubmit={() => {
+                    toBottom()
+                  }}
+                  sessionID={route.sessionID}
                       right={<pluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />}
-                    />
+                  />
                   </pluginRuntime.Slot>
-                </Show>
+              </Show>
               </box>
+            </Show>
             </Show>
             <Toast />
           </box>

@@ -2052,6 +2052,10 @@ export type Config = {
     batch_tool?: boolean
     openTelemetry?: boolean
     primary_tools?: Array<string>
+    /**
+     * Disable input box when viewing a subagent chat.
+     */
+    disable_subagent_input?: boolean
     continue_loop_on_deny?: boolean
     mcp_timeout?: number
     policies?: Array<ConfigV2ExperimentalPolicy>

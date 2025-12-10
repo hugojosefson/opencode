@@ -21624,6 +21624,9 @@
                 "type": "integer",
                 "exclusiveMinimum": 0
               },
+              "disable_subagent_input": {
+                "type": "boolean"
+              },
               "policies": {
                 "type": "array",
                 "items": {
