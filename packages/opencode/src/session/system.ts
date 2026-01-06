@@ -3,6 +3,7 @@ import { Global } from "../global"
 import { Filesystem } from "../util/filesystem"
 import { Config } from "../config/config"
 import { Log } from "../util/log"
+import { Session } from "."
 
 import { Instance } from "../project/instance"
 import path from "path"
@@ -148,5 +149,22 @@ export namespace SystemPrompt {
         .then((x) => (x ? "Instructions from: " + url + "\n" + x : "")),
     )
     return Promise.all([...foundFiles, ...foundUrls]).then((result) => result.filter(Boolean))
+  }
+
+  export async function hookOutput(sessionID: string): Promise<string[]> {
+    try {
+      const session = await Session.get(sessionID)
+      if (!session.hookOutput) return []
+      return [
+        [
+          "Hook output from session_start:",
+          "<hook_output>",
+          session.hookOutput,
+          "</hook_output>",
+        ].join("\n"),
+      ]
+    } catch {
+      return []
+    }
   }
 }

@@ -14,6 +14,7 @@ import { fn } from "@/util/fn"
 import { Agent } from "@/agent/agent"
 import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
+import { Hook } from "../hook"
 
 export namespace SessionCompaction {
   const log = Log.create({ service: "session.compaction" })
@@ -96,6 +97,7 @@ export namespace SessionCompaction {
     abort: AbortSignal
     auto: boolean
   }) {
+    await Hook.preCompact(input.sessionID)
     const userMessage = input.messages.findLast((m) => m.info.id === input.parentID)!.info as MessageV2.User
     const agent = await Agent.get("compaction")
     const model = agent.model

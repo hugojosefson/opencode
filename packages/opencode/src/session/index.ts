@@ -18,6 +18,7 @@ import { SessionPrompt } from "./prompt"
 import { fn } from "@/util/fn"
 import { Command } from "../command"
 import { Snapshot } from "@/snapshot"
+import { Hook } from "../hook"
 
 import type { Provider } from "@/provider/provider"
 import { PermissionNext } from "@/permission/next"
@@ -76,6 +77,7 @@ export namespace Session {
           diff: z.string().optional(),
         })
         .optional(),
+      hookOutput: z.string().optional(),
     })
     .meta({
       ref: "Session",
@@ -195,7 +197,7 @@ export namespace Session {
     parentID?: string
     directory: string
     permission?: PermissionNext.Ruleset
-  }) {
+  }): Promise<Info> {
     const result: Info = {
       id: Identifier.descending("session", input.id),
       slug: Slug.create(),
@@ -211,6 +213,10 @@ export namespace Session {
       },
     }
     log.info("created", result)
+    const hookOutput = await Hook.sessionStartWithCapture(result.id)
+    if (hookOutput) {
+      result.hookOutput = hookOutput
+    }
     await Storage.write(["session", Instance.project.id, result.id], result)
     Bus.publish(Event.Created, {
       info: result,

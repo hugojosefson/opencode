@@ -1066,6 +1066,20 @@ export namespace Config {
                 })
                 .array()
                 .optional(),
+              session_start: z
+                .object({
+                  command: z.string().array(),
+                  environment: z.record(z.string(), z.string()).optional(),
+                })
+                .array()
+                .optional(),
+              pre_compact: z
+                .object({
+                  command: z.string().array(),
+                  environment: z.record(z.string(), z.string()).optional(),
+                })
+                .array()
+                .optional(),
             })
             .optional(),
           chatMaxRetries: z.number().optional().describe("Number of retries for chat completions on failure"),
