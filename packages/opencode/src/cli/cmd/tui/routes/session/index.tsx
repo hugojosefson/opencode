@@ -74,6 +74,7 @@ import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { formatTranscript } from "../../util/transcript"
+import { formatMarkdownTables } from "@/util/format-table"
 
 addDefaultParsers(parsers.parsers)
 
@@ -1349,6 +1350,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
 function TextPart(props: { last: boolean; part: TextPart; message: AssistantMessage }) {
   const ctx = use()
   const { theme, syntax } = useTheme()
+  const content = () => formatMarkdownTables(props.part.text.trim())
   return (
     <Show when={props.part.text.trim()}>
       <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexShrink={0}>
@@ -1357,7 +1359,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
           drawUnstyledText={false}
           streaming={true}
           syntaxStyle={syntax()}
-          content={props.part.text.trim()}
+          content={content()}
           conceal={ctx.conceal()}
           fg={theme.text}
         />
