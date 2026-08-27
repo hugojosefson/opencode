@@ -288,6 +288,12 @@ export function Session() {
 
   createEffect(() => {
     const sessionID = route.sessionID
+    let disposed = false
+    let refresh: ReturnType<typeof setInterval> | undefined
+    onCleanup(() => {
+      disposed = true
+      if (refresh) clearInterval(refresh)
+    })
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
       const result = await sdk.client.session.get({ sessionID }, { throwOnError: true })
@@ -314,6 +320,11 @@ export function Session() {
       }
       editor.reconnect(result.data.directory)
       await sync.session.sync(sessionID)
+      if (disposed || route.sessionID !== sessionID) return
+      // Other local processes share the session store, but not this process's event bus.
+      refresh = setInterval(() => {
+        void sync.session.refresh(sessionID).catch(() => {})
+      }, 2000)
       if (route.sessionID === sessionID && scroll) scroll.scrollBy(100_000)
     })().catch((error) => {
       if (route.sessionID !== sessionID) return
