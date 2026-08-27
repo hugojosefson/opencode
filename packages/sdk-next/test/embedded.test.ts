@@ -143,7 +143,7 @@ test("Location-owned runner events reach the ready global client", async () => {
   }
 }, 10_000)
 
-test("independent embedded hosts do not share live notifications", async () => {
+test("independent embedded hosts share persisted state but not live notifications", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-hosts-"))
   const database = Flag.OPENCODE_DB
   Flag.OPENCODE_DB = join(directory, "opencode.sqlite")
@@ -178,6 +178,7 @@ test("independent embedded hosts do not share live notifications", async () => {
 
       yield* firstEvent.await.pipe(Effect.timeout("2 seconds"))
       expect(Option.isNone(yield* secondEvent.await.pipe(Effect.timeoutOption("100 millis")))).toBe(true)
+      expect((yield* second.sessions.get({ sessionID })).agent).toBe(Agent.ID.make("plan"))
     })
     await Effect.runPromise(Effect.scoped(program))
   } finally {
