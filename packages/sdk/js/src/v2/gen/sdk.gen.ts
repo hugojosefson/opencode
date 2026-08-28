@@ -207,6 +207,8 @@ import type {
   SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
+  SessionScheduledTaskErrors,
+  SessionScheduledTaskResponses,
   SessionShareErrors,
   SessionShareResponses,
   SessionShellErrors,
@@ -3659,6 +3661,42 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<SessionTodoResponses, SessionTodoErrors, ThrowOnError>({
       url: "/session/{sessionID}/todo",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List scheduled session tasks
+   *
+   * Discover active systemd user timers and recent task lifecycle results for a session.
+   */
+  public scheduledTask<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      SessionScheduledTaskResponses,
+      SessionScheduledTaskErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/scheduled-task",
       ...options,
       ...params,
     })
