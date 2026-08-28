@@ -2055,9 +2055,6 @@ export type Config = {
     batch_tool?: boolean
     openTelemetry?: boolean
     primary_tools?: Array<string>
-    /**
-     * Disable input box when viewing a subagent chat.
-     */
     disable_subagent_input?: boolean
     continue_loop_on_deny?: boolean
     mcp_timeout?: number
@@ -2581,6 +2578,24 @@ export type NotFoundError = {
   data: {
     message: string
   }
+}
+
+export type ScheduledTask = {
+  id: string
+  taskID?: string
+  source: "metadata" | "service" | "script" | "journal"
+  status: "scheduled" | "running" | "succeeded" | "failed" | "unknown"
+  title?: string
+  timer?: string
+  service?: string
+  schedule?: string
+  next?: number
+  last?: number
+  workingDirectory?: string
+  prompt?: string
+  result?: string
+  exitStatus?: number
+  historical: boolean
 }
 
 export type TextPartInput = {
@@ -9870,6 +9885,40 @@ export type SessionTodoResponses = {
 }
 
 export type SessionTodoResponse = SessionTodoResponses[keyof SessionTodoResponses]
+
+export type SessionScheduledTaskData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/scheduled-task"
+}
+
+export type SessionScheduledTaskErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionScheduledTaskError = SessionScheduledTaskErrors[keyof SessionScheduledTaskErrors]
+
+export type SessionScheduledTaskResponses = {
+  /**
+   * Scheduled session tasks
+   */
+  200: Array<ScheduledTask>
+}
+
+export type SessionScheduledTaskResponse = SessionScheduledTaskResponses[keyof SessionScheduledTaskResponses]
 
 export type SessionDiffData = {
   body?: never
