@@ -11,6 +11,7 @@ import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Snapshot } from "@/snapshot"
+import { ScheduledTask } from "@/session/scheduled-task"
 import { Schema, Struct } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
@@ -81,6 +82,7 @@ export const SessionPaths = {
   get: `${root}/:sessionID`,
   children: `${root}/:sessionID/children`,
   todo: `${root}/:sessionID/todo`,
+  scheduledTask: `${root}/:sessionID/scheduled-task`,
   diff: `${root}/:sessionID/diff`,
   messages: `${root}/:sessionID/message`,
   message: `${root}/:sessionID/message/:messageID`,
@@ -163,6 +165,18 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.todo",
             summary: "Get session todos",
             description: "Retrieve the todo list associated with a specific session, showing tasks and action items.",
+          }),
+        ),
+        HttpApiEndpoint.get("scheduledTask", SessionPaths.scheduledTask, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Array(ScheduledTask.Info), "Scheduled session tasks"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.scheduledTask",
+            summary: "List scheduled session tasks",
+            description: "Discover active systemd user timers and recent task lifecycle results for a session.",
           }),
         ),
         HttpApiEndpoint.get("diff", SessionPaths.diff, {
