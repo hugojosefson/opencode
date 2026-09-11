@@ -204,10 +204,42 @@ for (const item of targets) {
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
     const binaryPath = `dist/${name}/bin/opencode`
-    console.log(`Running smoke test: ${binaryPath} --version`)
+    const smokePrompt = "Return exactly the single character 2 and no other text."
+    console.log(`Running inference smoke test: ${binaryPath}`)
     try {
-      const versionOutput = await $`${binaryPath} --version`.text()
-      console.log(`Smoke test passed: ${versionOutput.trim()}`)
+      const output =
+        await $`${binaryPath} --pure --variant=minimal --thinking=false --format=json run ${smokePrompt}`.text()
+      const events = output
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) => {
+          const event = JSON.parse(line) as unknown
+          if (typeof event !== "object" || event === null) {
+            throw new Error(`Smoke test JSONL line is not an object: ${line}`)
+          }
+          return event as Record<string, unknown>
+        })
+      const parts = events.map((event, index) => {
+        if (typeof event.part !== "object" || event.part === null) {
+          throw new Error(`Smoke test event ${index} has no part object`)
+        }
+        return event.part as Record<string, unknown>
+      })
+      const eventTypes = ["step_start", "text", "step_finish"]
+      if (JSON.stringify(events.map((event) => event.type)) !== JSON.stringify(eventTypes)) {
+        throw new Error(`Unexpected smoke test event types: ${JSON.stringify(events.map((event) => event.type))}`)
+      }
+      const partTypes = ["step-start", "text", "step-finish"]
+      if (JSON.stringify(parts.map((part) => part.type)) !== JSON.stringify(partTypes)) {
+        throw new Error(`Unexpected smoke test part types: ${JSON.stringify(parts.map((part) => part.type))}`)
+      }
+      if (parts[1]?.text !== "2") {
+        throw new Error(`Unexpected smoke test text: ${JSON.stringify(parts[1]?.text)}`)
+      }
+      if (parts[2]?.reason !== "stop") {
+        throw new Error(`Unexpected smoke test finish reason: ${JSON.stringify(parts[2]?.reason)}`)
+      }
+      console.log(`Inference smoke test passed`)
     } catch (e) {
       console.error(`Smoke test failed for ${name}:`, e)
       process.exit(1)
