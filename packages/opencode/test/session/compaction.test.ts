@@ -1920,6 +1920,58 @@ describe("session.compaction.process", () => {
     })
   }
 
+  itCompaction.instance("continues automatic compaction after a local 404 error", () => {
+    const stub = llm()
+    const requests: LLM.StreamInput[] = []
+    stub.push(
+      Stream.fail(
+        new APICallError({
+          message: "Not Found",
+          url: "http://local.invalid/v1/chat/completions",
+          requestBodyValues: {},
+          statusCode: 404,
+          isRetryable: false,
+          responseHeaders: { "retry-after-ms": "0" },
+        }),
+      ),
+    )
+    stub.push(reply(suffixSummary, (input) => requests.push(input)))
+    return Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      const original = yield* createUserMessage(session.id, "Required history")
+      yield* createCompactionMarker(session.id)
+      const messages = yield* ssn.messages({ sessionID: session.id })
+      const captured: LLM.StreamInput = {
+        user: original,
+        agent: { name: "build" } as LLM.StreamInput["agent"],
+        sessionID: session.id,
+        system: [],
+        messages: [{ role: "user", content: "Required history" }],
+        tools: {},
+        model: { ...createModel({ context: 100_000, output: 32_000 }), providerID: ProviderV2.ID.make("llama.cpp") },
+      }
+      expect(
+        yield* SessionCompaction.use.process({
+          parentID: messages.at(-1)!.info.id,
+          messages,
+          sessionID: session.id,
+          auto: true,
+          capture: { request: captured, messageIDs: new Set([original.id]) },
+        }),
+      ).toBe("continue")
+      expect(requests).toHaveLength(1)
+      expect(JSON.stringify(requests[0]?.messages.at(-1))).toContain("Summarize the older portion")
+      const persisted = yield* ssn.messages({ sessionID: session.id })
+      const marker = persisted.flatMap((message) => message.parts).find((part) => part.type === "compaction")
+      expect(marker?.type === "compaction" && marker.diagnostics).toMatchObject({ used: "suffix" })
+      expect(marker?.type === "compaction" && marker.diagnostics?.fallback).toBeUndefined()
+      expect(persisted.at(-1)?.parts.some((part) => part.type === "text" && part.metadata?.compaction_continue)).toBe(
+        true,
+      )
+    }).pipe(withCompaction({ llm: stub.llmLayer, config: cfg({ mode: "suffix" }) }))
+  })
+
   itCompaction.instance("uses a rebuilt live request when no capture is available", () => {
     const stub = llm()
     let request: LLM.StreamInput | undefined
