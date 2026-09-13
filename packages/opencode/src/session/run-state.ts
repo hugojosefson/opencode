@@ -7,6 +7,7 @@ import { Effect, Latch, Layer, Scope, Context } from "effect"
 import { Session } from "./session"
 import { SessionID } from "./schema"
 import { SessionStatus } from "./status"
+import { recordLifecycle } from "@/diagnostics/lifecycle"
 
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
@@ -38,6 +39,7 @@ const layer = Layer.effect(
         const runners = new Map<SessionID, Runner.Runner<SessionV1.WithParts>>()
         yield* Effect.addFinalizer(
           Effect.fnUntraced(function* () {
+            for (const sessionID of runners.keys()) recordLifecycle("instance-disposal", { sessionID })
             yield* Effect.forEach(runners.values(), (runner) => runner.cancel, {
               concurrency: "unbounded",
               discard: true,
@@ -75,6 +77,7 @@ const layer = Layer.effect(
     })
 
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
+      recordLifecycle("session-cancel", { sessionID })
       yield* cancelBackgroundJobs(background, sessionID)
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)

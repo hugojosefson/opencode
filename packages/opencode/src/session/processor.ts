@@ -25,6 +25,7 @@ import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
+import { recordLifecycle } from "@/diagnostics/lifecycle"
 
 const DOOM_LOOP_THRESHOLD = 3
 export type Result = "compact" | "stop" | "continue"
@@ -631,13 +632,25 @@ const layer = Layer.effect(
       })
 
       const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown, deferError = false) {
+        const error = parse(e)
+        recordLifecycle("stream-error", {
+          sessionID: input.sessionID,
+          summary: input.assistantMessage.summary === true,
+          error:
+            error.name === "MessageAbortedError"
+              ? "abort"
+              : SessionV1.ContextOverflowError.isInstance(error)
+                ? "context"
+                : error.name === "APIError"
+                  ? "api"
+                  : "other",
+        })
         yield* Effect.logError("process", {
           "session.id": input.sessionID,
           messageID: input.assistantMessage.id,
           error: errorMessage(e),
           stack: e instanceof Error ? e.stack : undefined,
         })
-        const error = parse(e)
         const deferred = deferError && ctx.assistantMessage.summary === true && error.name !== "MessageAbortedError"
         if (SessionV1.ContextOverflowError.isInstance(error)) {
           if ((yield* config.get()).compaction?.auto === false && !ctx.assistantMessage.summary) {
@@ -677,6 +690,10 @@ const layer = Layer.effect(
             ctx.reasoningMap = {}
             yield* status.set(ctx.sessionID, { type: "busy" })
             const stream = llm.stream(streamInput)
+            recordLifecycle("stream-start", {
+              sessionID: input.sessionID,
+              summary: input.assistantMessage.summary === true,
+            })
 
             yield* stream.pipe(
               Stream.tap((event) => handleEvent(event)),
@@ -687,6 +704,10 @@ const layer = Layer.effect(
             Effect.onInterrupt(() =>
               Effect.gen(function* () {
                 aborted = true
+                recordLifecycle("stream-interrupt", {
+                  sessionID: input.sessionID,
+                  summary: input.assistantMessage.summary === true,
+                })
                 if (!ctx.assistantMessage.error) {
                   yield* halt(new DOMException("Aborted", "AbortError"))
                 }
@@ -713,6 +734,21 @@ const layer = Layer.effect(
             ),
             Effect.catch((error) => halt(error, options?.deferError)),
             Effect.ensuring(cleanup()),
+            Effect.onExit((exit) =>
+              Effect.sync(() =>
+                recordLifecycle("stream-end", {
+                  sessionID: input.sessionID,
+                  summary: input.assistantMessage.summary === true,
+                  result: Exit.isSuccess(exit)
+                    ? ctx.assistantMessage.error || ctx.needsCompaction
+                      ? "failure"
+                      : "success"
+                    : Cause.hasInterrupts(exit.cause)
+                      ? "interrupted"
+                      : "failure",
+                }),
+              ),
+            ),
           )
 
           if (ctx.needsCompaction) return "compact"

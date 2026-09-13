@@ -69,6 +69,7 @@ const TOP_LEVEL = [
 // distinct argv shape, not every leaf. Add new entries when a subcommand
 // gains user-visible flags that we want to lock in.
 const SUBCOMMANDS = [
+  ["debug", "lifecycle"],
   ["mcp", "list"],
   ["mcp", "add"],
   ["mcp", "auth"],
