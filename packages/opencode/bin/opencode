@@ -4,15 +4,38 @@ const childProcess = require("child_process")
 const fs = require("fs")
 const path = require("path")
 const os = require("os")
+const crypto = require("crypto")
 
 const forwardedSignals = ["SIGINT", "SIGTERM", "SIGHUP"]
 
 function run(target) {
+  const run = crypto.randomBytes(8).toString("hex")
+  const record = (event, fields = {}) => {
+    if (process.env.OPENCODE_DIAGNOSTICS !== "1") return
+    try {
+      const directory = path.join(
+        process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"),
+        "opencode",
+        "log",
+      )
+      fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
+      fs.appendFileSync(
+        path.join(directory, "lifecycle.jsonl"),
+        JSON.stringify({ ts: new Date().toISOString(), app: "opencode-launcher", run, event, ...fields }) + "\n",
+        { mode: 0o600 },
+      )
+    } catch {
+      process.stderr.write("OpenCode lifecycle diagnostics write failed\n")
+    }
+  }
+  record("process-spawn")
   const child = childProcess.spawn(target, process.argv.slice(2), {
     stdio: "inherit",
+    env: { ...process.env, OPENCODE_DIAGNOSTIC_RUN: run },
   })
 
   child.on("error", (error) => {
+    record("spawn-error")
     console.error(error.message)
     process.exit(1)
   })
@@ -20,6 +43,7 @@ function run(target) {
   const forwarders = {}
   for (const signal of forwardedSignals) {
     forwarders[signal] = () => {
+      record("supervisor-signal", { signal })
       try {
         child.kill(signal)
       } catch {
@@ -30,6 +54,8 @@ function run(target) {
   }
 
   child.on("exit", (code, signal) => {
+    // The parent observes SIGKILL and native crashes that cannot flush child logs.
+    record("process-exit", { exitCode: code, signal })
     for (const forwardedSignal of forwardedSignals) {
       process.removeListener(forwardedSignal, forwarders[forwardedSignal])
     }

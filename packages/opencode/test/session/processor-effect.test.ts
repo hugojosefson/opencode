@@ -1,3 +1,5 @@
+import { Global } from "@opencode-ai/core/global"
+import { createHash } from "node:crypto"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Database } from "@opencode-ai/core/database/database"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -944,6 +946,17 @@ for (const summary of [false, true]) {
       ({ dir, llm }) =>
         Effect.gen(function* () {
           const seen = defer<void>()
+          const previous = process.env.OPENCODE_DIAGNOSTICS
+          yield* Effect.acquireRelease(
+            Effect.sync(() => {
+              process.env.OPENCODE_DIAGNOSTICS = "1"
+            }),
+            () =>
+              Effect.sync(() => {
+                if (previous === undefined) delete process.env.OPENCODE_DIAGNOSTICS
+                else process.env.OPENCODE_DIAGNOSTICS = previous
+              }),
+          )
           const { processors, session, provider } = yield* boot()
           const events = yield* EventV2Bridge.Service
           const sts = yield* SessionStatus.Service
@@ -1011,6 +1024,22 @@ for (const summary of [false, true]) {
           }
           expect(state).toMatchObject({ type: "idle" })
           expect(errs).toContain("MessageAbortedError")
+          const trace = yield* Effect.promise(() => Bun.file(path.join(Global.Path.log, "lifecycle.jsonl")).text())
+          const key = createHash("sha256").update(chat.id).digest("hex").slice(0, 16)
+          const records = trace
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line))
+            .filter((record) => record.session === key)
+          expect(records.map((record) => record.event)).toEqual([
+            "stream-start",
+            "stream-interrupt",
+            "stream-error",
+            "stream-end",
+          ])
+          expect(records[2].error).toBe("abort")
+          expect(records[3].result).toBe("interrupted")
+          expect(trace).not.toContain(chat.id)
         }),
       { config: (url) => providerCfg(url) },
     ),

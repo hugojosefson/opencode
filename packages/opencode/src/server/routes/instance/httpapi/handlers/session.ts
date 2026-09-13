@@ -12,6 +12,7 @@ import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
+import { recordLifecycle } from "@/diagnostics/lifecycle"
 import { ScheduledTask } from "@/session/scheduled-task"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
@@ -239,6 +240,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const abort = Effect.fn("SessionHttpApi.abort")(function* (ctx: { params: { sessionID: SessionID } }) {
+      recordLifecycle("api-abort", { sessionID: ctx.params.sessionID })
       yield* promptSvc.cancel(ctx.params.sessionID)
       return true
     })
