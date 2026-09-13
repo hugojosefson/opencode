@@ -146,9 +146,45 @@ describe("session.retry.delay", () => {
       expect(attempts).toStrictEqual([1, 2, 3, 4, 5])
     }),
   )
+  it.instance("local policy stops after ten retries", () =>
+    Effect.gen(function* () {
+      const attempts: number[] = []
+      const error = apiError({ "retry-after-ms": "0" })
+      const step = yield* Schedule.toStepWithMetadata(
+        SessionRetry.policy({
+          provider: "llama.cpp",
+          parse: Schema.decodeUnknownSync(SessionV1.APIError.Schema),
+          set: (info) =>
+            Effect.sync(() => {
+              attempts.push(info.attempt)
+            }),
+        }),
+      )
+
+      yield* Effect.forEach(Array.from({ length: 11 }), () => Effect.ignore(step(error)))
+
+      expect(attempts).toStrictEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    }),
+  )
 })
 
 describe("session.retry.retryable", () => {
+  test("retries local 404 errors and preserves other providers", () => {
+    const error = new SessionV1.APIError({ message: "Not Found", statusCode: 404, isRetryable: false }).toObject()
+    expect(SessionRetry.retryable(error, "llama.cpp")).toEqual({ message: "Not Found" })
+    expect(SessionRetry.retryable(error, "test")).toBeUndefined()
+    expect(
+      SessionRetry.retryable(
+        new SessionV1.APIError({ message: "Unauthorized", statusCode: 401, isRetryable: false }).toObject(),
+        "llama.cpp",
+      ),
+    ).toBeUndefined()
+  })
+
+  test("caps exponential delay when response headers have no retry hint", () => {
+    expect(SessionRetry.delay(10, apiError({ "content-type": "application/json" }), 0)).toBe(30_000)
+  })
+
   test("retries serialized too_many_requests messages", () => {
     const error = wrap(JSON.stringify({ type: "error", error: { type: "too_many_requests" } }))
     expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Too Many Requests" })
